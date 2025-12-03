@@ -1,0 +1,1012 @@
+# Data manipulation
+import pandas as pd
+import numpy as np
+
+# Data visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as pximport plotly.subplots as sp
+import plotly.subplots as sp
+import plotly.graph_objects as go
+from scipy import stats
+
+#Tests statistiques
+from scipy.stats import pearsonr
+from scipy.stats import ttest_ind
+from scipy.stats import f_oneway
+
+# Machine Learning
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+# ML Models
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.svm import SVR
+from sklearn.model_selection import KFold
+
+
+# Evaluation metrics
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import KFold, RandomizedSearchCV
+import time
+from sklearn.model_selection import cross_val_score
+
+# Display settings
+import warnings
+warnings.filterwarnings("ignore")
+plt.style.use("ggplot")
+
+
+df = pd.read_csv("/content/sample_data/StudentPerformanceFactors.csv")
+df.head()
+
+
+
+missing_counts = df.isna().sum().sort_values(ascending=False)
+missing_counts[missing_counts>0]
+
+# =============================
+# 3. Définition des groupes de variables (corrigé)
+# =============================
+# Conventions de noms utilisées ensuite:
+# numeric_vars, ordinal_vars, binary_vars, nominal_vars, target_col
+
+target_col = 'Exam_Score'
+
+# Variables numériques (hors cible)
+numeric_vars = [c for c in df.select_dtypes(include=['int64','float64']).columns if c != target_col]
+
+# Ordinal: niveaux avec ordre naturel
+ordinal_mapping = {
+    'Motivation_Level': ['Low','Medium','High'],
+    'Parental_Involvement': ['Low','Medium','High'],
+    'Teacher_Quality': ['Low','Medium','High'],
+    'Distance_from_Home': ['Near','Moderate','Far'],
+    'Parental_Education_Level': ['High School','College','Postgraduate'],
+    'Family_Income': ['Low','Medium','High'],
+    'Access_to_Resources': ['Low','Medium','High']
+}
+ordinal_vars = list(ordinal_mapping.keys())
+
+# Binaires: deux modalités
+binary_vars = ['Extracurricular_Activities','Internet_Access','Learning_Disabilities','Gender','School_Type']
+
+# Nominal: pas d'ordre spécifique
+nominal_vars = ['Peer_Influence']
+
+print('Numeric vars:', numeric_vars)
+print('Ordinal vars:', ordinal_vars)
+print('Binary vars:', binary_vars)
+print('Nominal vars:', nominal_vars)
+
+# Imputation des NaN (convention noms corrigée)
+df_imputed = df.copy()
+# Numériques
+for c in numeric_vars + [target_col]:
+    if df_imputed[c].isna().any():
+        df_imputed[c] = df_imputed[c].fillna(df_imputed[c].median())
+# Catégorielles
+for c in ordinal_vars + binary_vars + nominal_vars:
+    if df_imputed[c].isna().any():
+        df_imputed[c] = df_imputed[c].fillna(df_imputed[c].mode().iloc[0])
+
+(df_imputed.isna().sum().sum(), 'NaN restants')
+
+# Détection des outliers (noms corrigés)
+numeric_for_outlier = numeric_vars + [target_col]
+outlier_report = []
+for c in numeric_for_outlier:
+    q1, q3 = df_imputed[c].quantile([0.25, 0.75])
+    iqr = q3 - q1
+    low = q1 - 1.5*iqr
+    high = q3 + 1.5*iqr
+    outliers = ((df_imputed[c] < low) | (df_imputed[c] > high)).sum()
+    outlier_report.append({'Variable': c,'Q1': q1,'Q3': q3,'IQR': iqr,'Low_Thr': low,'High_Thr': high,'Outliers': outliers})
+import pandas as pd
+outlier_df = pd.DataFrame(outlier_report)
+outlier_df
+
+mask_exam = df_imputed['Exam_Score'] > 100
+df_clean = df_imputed[~mask_exam ].reset_index(drop=True)
+
+
+
+# Visualisation boxplots après nettoyage des outliers
+numeric_for_outlier = numeric_vars + [target_col]
+plt.figure(figsize=(14,6))
+sns.boxplot(data=df_clean[numeric_for_outlier])
+plt.xticks(rotation=45, ha='right')
+plt.title('Boxplots des variables numériques après nettoyage des outliers')
+plt.tight_layout()
+plt.show()
+
+numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+
+# Calculer le nombre de lignes et colonnes pour les subplots
+n_cols = 3
+n_rows = (len(numeric_cols) + n_cols - 1) // n_cols
+
+# Créer les subplots
+fig = sp.make_subplots(
+    rows=n_rows,
+    cols=n_cols,
+    subplot_titles=[f"Distribution of {col}" for col in numeric_cols],
+    vertical_spacing=0.1,
+    horizontal_spacing=0.08
+)
+
+# Ajouter chaque histogramme
+for idx, col in enumerate(numeric_cols):
+    row = idx // n_cols + 1
+    col_pos = idx % n_cols + 1
+
+    fig.add_trace(
+        go.Histogram(x=df[col], nbinsx=30, name=col, showlegend=False),
+        row=row,
+        col=col_pos
+    )
+
+# Mise en forme
+fig.update_layout(
+    height=300 * n_rows,
+    title_text="Distributions des variables numériques",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+
+
+categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+
+# Calculer le nombre de lignes et colonnes pour les subplots
+n_cols = 3
+n_rows = (len(categorical_cols) + n_cols - 1) // n_cols
+
+# Créer les subplots
+fig = sp.make_subplots(
+    rows=n_rows,
+    cols=n_cols,
+    subplot_titles=[f"Count of categories — {col}" for col in categorical_cols],
+    vertical_spacing=0.12,
+    horizontal_spacing=0.08
+)
+
+# Ajouter chaque histogramme
+for idx, col in enumerate(categorical_cols):
+    row = idx // n_cols + 1
+    col_pos = idx % n_cols + 1
+
+    # Compter les valeurs pour chaque catégorie
+    value_counts = df[col].value_counts()
+
+    fig.add_trace(
+        go.Bar(
+            x=value_counts.index,
+            y=value_counts.values,
+            name=col,
+            showlegend=False,
+            marker=dict(color=px.colors.qualitative.Plotly[idx % len(px.colors.qualitative.Plotly)])
+        ),
+        row=row,
+        col=col_pos
+    )
+
+# Mise en forme
+fig.update_layout(
+    height=300 * n_rows,
+    title_text="Distribution des variables catégorielles",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+
+# Exclure Exam_Score de la liste
+plot_cols = [col for col in numeric_cols if col != "Exam_Score"]
+
+# Calculer le nombre de lignes et colonnes pour les subplots
+n_cols = 3
+n_rows = (len(plot_cols) + n_cols - 1) // n_cols
+
+# Créer les subplots
+fig = sp.make_subplots(
+    rows=n_rows,
+    cols=n_cols,
+    subplot_titles=[f"{col} vs Exam Score" for col in plot_cols],
+    vertical_spacing=0.12,
+    horizontal_spacing=0.08
+)
+
+# Ajouter chaque scatter plot avec trendline
+for idx, col in enumerate(plot_cols):
+    row = idx // n_cols + 1
+    col_pos = idx % n_cols + 1
+
+    # Supprimer les valeurs manquantes
+    mask = df[[col, "Exam_Score"]].notna().all(axis=1)
+    x_data = df.loc[mask, col]
+    y_data = df.loc[mask, "Exam_Score"]
+
+    # Ajouter le scatter plot
+    fig.add_trace(
+        go.Scatter(
+            x=x_data,
+            y=y_data,
+            mode='markers',
+            name=col,
+            showlegend=False,
+            marker=dict(size=5, opacity=0.6)
+        ),
+        row=row,
+        col=col_pos
+    )
+
+    # Calculer et ajouter la ligne de tendance
+    if len(x_data) > 1:
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x_data, y_data)
+        x_range = [x_data.min(), x_data.max()]
+        y_range = [slope * x + intercept for x in x_range]
+
+        fig.add_trace(
+            go.Scatter(
+                x=x_range,
+                y=y_range,
+                mode='lines',
+                name='Trendline',
+                showlegend=False,
+                line=dict(color='red', dash='dash')
+            ),
+            row=row,
+            col=col_pos
+        )
+
+# Mise en forme
+fig.update_layout(
+    height=300 * n_rows,
+    title_text="Relations entre variables numériques et Exam Score",
+    template="plotly_white",
+    showlegend=False
+)
+
+# Mettre à jour les axes y pour tous les subplots
+fig.update_yaxes(title_text="Exam Score")
+
+fig.show()
+
+# Calculer le nombre de lignes et colonnes pour les subplots
+n_cols = 3
+n_rows = (len(categorical_cols) + n_cols - 1) // n_cols
+
+# Créer les subplots
+fig = sp.make_subplots(
+    rows=n_rows,
+    cols=n_cols,
+    subplot_titles=[f"Exam Score by {col}" for col in categorical_cols],
+    vertical_spacing=0.12,
+    horizontal_spacing=0.08
+)
+
+# Ajouter chaque box plot
+for idx, col in enumerate(categorical_cols):
+    row = idx // n_cols + 1
+    col_pos = idx % n_cols + 1
+
+    # Récupérer les catégories uniques
+    categories = df[col].dropna().unique()
+
+    for category in categories:
+        mask = df[col] == category
+        fig.add_trace(
+            go.Box(
+                y=df.loc[mask, "Exam_Score"],
+                name=str(category),
+                showlegend=False,
+                marker=dict(opacity=0.7)
+            ),
+            row=row,
+            col=col_pos
+        )
+
+# Mise en forme
+fig.update_layout(
+    height=300 * n_rows,
+    title_text="Exam Score par variables catégorielles",
+    template="plotly_white",
+    showlegend=False
+)
+
+# Mettre à jour les axes y pour tous les subplots
+fig.update_yaxes(title_text="Exam Score")
+
+fig.show()
+
+#Variables numériques
+numeric_cols = [
+    "Hours_Studied",
+    "Attendance",
+    "Sleep_Hours",
+    "Previous_Scores",
+    "Tutoring_Sessions",
+    "Physical_Activity"
+]
+
+#Variables catégorielles binaires (2 modalités → t-test)
+
+binary_cats = [
+    "Extracurricular_Activities",
+    "Internet_Access",
+    "Learning_Disabilities",
+    "Gender",
+    "School_Type"
+]
+
+#Variables catégorielles multinomiales (3+ modalités → ANOVA)
+multi_cats = [
+    "Parental_Involvement",
+    "Access_to_Resources",
+    "Motivation_Level",
+    "Family_Income",
+    "Teacher_Quality",
+    "Peer_Influence",
+    "Parental_Education_Level",
+    "Distance_from_Home"
+]
+
+
+def test_correlation(df, numeric_col, target='Exam_Score'):
+    r, p = pearsonr(df[numeric_col], df[target])
+    display(pd.DataFrame({
+        'Variable': [numeric_col],
+        'Correlation (r)': [round(r, 3)],
+        'p-value': [round(p, 4)],
+        'Interpretation': [
+            'Significant relationship' if p < 0.05 else 'Not significant'
+        ]
+    }))
+
+for col in numeric_cols:
+  test_correlation(df, col)
+
+
+def test_ttest(df, cat_col, target='Exam_Score'):
+    groups = df[cat_col].dropna().unique()
+    g1, g2 = groups[0], groups[1]
+
+    # T-statistic
+    stat, p = ttest_ind(
+        df[df[cat_col] == g1][target],
+        df[df[cat_col] == g2][target],
+        equal_var=False
+    )
+
+    # Result table
+    display(pd.DataFrame({
+        'Categorical Variable': [cat_col],
+        'Category A': [g1],
+        'Category B': [g2],
+        f'{g1} Mean': [round(df[df[cat_col]==g1][target].mean(), 2)],
+        f'{g2} Mean': [round(df[df[cat_col]==g2][target].mean(), 2)],
+        'T-statistic': [round(stat, 3)],
+        'p-value': [round(p, 4)],
+        'Conclusion': [
+            'Significant difference between groups'
+            if p < 0.05 else
+            'No significant difference between groups'
+        ]
+    }))
+
+for col in binary_cats:
+    test_ttest(df, col)
+
+
+
+def plot_correlation_matrix(df):
+    """
+    Plot a rounded correlation matrix using a pastel color palette.
+    Only numeric columns are used; others are ignored.
+    """
+
+    # ---- 1. Identify numeric columns ----
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
+
+    if len(numeric_cols) == 0:
+        raise ValueError("Aucune colonne numérique trouvée dans le DataFrame.")
+
+    # ---- 2. Compute correlation matrix ----
+    corr = df[numeric_cols].corr()
+
+    # ---- 3. Round values ----
+    corr_rounded = corr.round(2)
+
+    # ---- 4. Plot with Plotly ----
+    fig = px.imshow(
+        corr_rounded,
+        text_auto=True,
+        aspect="auto",
+        title="Correlation Matrix (Rounded & Pastel)",
+        template="plotly_white",
+        color_continuous_scale=[
+            "#d0e1f9",  # pastel blue
+            "#4d648d",  # medium blue
+            "#283655"   # strong navy
+        ],
+    )
+
+    # ---- 5. Layout adjustments ----
+    fig.update_layout(
+        width=900,
+        height=900,
+        font=dict(size=12),
+        title_font=dict(size=20),
+        xaxis_title="",
+        yaxis_title=""
+    )
+
+    fig.update_xaxes(side="bottom")
+
+
+    return fig
+
+
+plot_correlation_matrix(df)
+
+
+# Encodage ordinal sur le dataset nettoyé
+ordinal_maps = {
+    'Parental_Involvement': {'Low':0,'Medium':1,'High':2},
+    'Access_to_Resources': {'Low':0,'Medium':1,'High':2},
+    'Motivation_Level': {'Low':0,'Medium':1,'High':2},
+    'Family_Income': {'Low':0,'Medium':1,'High':2},
+    'Teacher_Quality': {'Low':0,'Medium':1,'High':2},
+    'Parental_Education_Level': {'High School':0,'College':1,'Postgraduate':2},
+    'Distance_from_Home': {'Near':0,'Moderate':1,'Far':2},
+}
+
+df_encoded = df_clean.copy()
+for c, mp in ordinal_maps.items():
+    if c in df_encoded.columns:
+        df_encoded[c] = df_encoded[c].map(mp)
+
+df_encoded[list(ordinal_maps.keys())].head()
+
+# Encodage binaire
+binary_maps = {
+    'Extracurricular_Activities': {'No':0,'Yes':1},
+    'Internet_Access': {'No':0,'Yes':1},
+    'Learning_Disabilities': {'No':0,'Yes':1},
+    'Gender': {'Male':0,'Female':1},
+    'School_Type': {'Public':0,'Private':1},
+}
+
+for c, mp in binary_maps.items():
+    if c in df_encoded.columns:
+        df_encoded[c] = df_encoded[c].map(mp)
+
+df_encoded[list(binary_maps.keys())].head()
+
+# Encodage nominal pour Peer_Influence avec One-Hot Encoding
+if 'Peer_Influence' in df_encoded.columns:
+    # One-Hot Encoding avec drop_first=True (supprime la première catégorie pour éviter multicolinéarité)
+    peer_dummies = pd.get_dummies(df_encoded['Peer_Influence'], prefix='PeerInfluence', drop_first=True, dtype=int)
+    df_final = pd.concat([df_encoded.drop(columns=['Peer_Influence']), peer_dummies], axis=1)
+else:
+    df_final = df_encoded.copy()
+
+print('Colonnes PeerInfluence créées:', [c for c in df_final.columns if c.startswith('PeerInfluence_')])
+print('Shape finale:', df_final.shape)
+df_final.head()
+
+categorical_cols = ['Peer_Influence']  # ajouter ici toutes les colonnes restantes
+df_encoded = pd.get_dummies(df_encoded, columns=categorical_cols, drop_first=True)
+
+
+# Liste des colonnes non numériques
+non_numeric_cols = df_encoded.select_dtypes(include='object').columns
+print(non_numeric_cols)
+
+
+print(df_encoded.dtypes)
+
+
+print(f"\n{'='*70}")
+print("ANALYSE EXPLORATOIRE - STRUCTURE DES DONNÉES")
+print(f"{'='*70}\n")
+print("🔍 Objectif : Visualiser la structure des données pour détecter")
+print("   l'existence éventuelle de groupes naturels d'étudiants.\n")
+
+# 1. Statistiques descriptives générales
+print(f"{'─'*70}")
+print("📊 STATISTIQUES DESCRIPTIVES GÉNÉRALES")
+print(f"{'─'*70}\n")
+
+variables_cles = ['Exam_Score', 'Hours_Studied', 'Attendance', 'Previous_Scores',
+                  'Sleep_Hours', 'Motivation_Level', 'Parental_Involvement',
+                  'Access_to_Resources', 'Tutoring_Sessions', 'Physical_Activity']
+
+stats_desc = df_encoded[variables_cles].describe().T
+stats_desc['range'] = stats_desc['max'] - stats_desc['min']
+print(stats_desc[['mean', 'std', 'min', 'max', 'range']].round(2))
+
+print(f"\n{'='*70}\n")
+
+print(f"\n{'='*70}")
+print("ANALYSE EXPLORATOIRE - EXISTE-T-IL DES GROUPES NATURELS ?")
+print(f"{'='*70}\n")
+
+# Supprimer la colonne Performance_Category si elle existe déjà
+if 'Performance_Category' in df_encoded.columns:
+    df_encoded = df_encoded.drop(columns=['Performance_Category'])
+
+# Préparation des données
+X = df_encoded.drop(columns=['Exam_Score'])  # Features
+y = df_encoded['Exam_Score']                  # Target
+
+# Standardisation
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Réduction en 2D avec PCA
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+# Créer 3 catégories de performance (variable temporaire)
+performance_category = pd.cut(df_encoded['Exam_Score'],
+                              bins=[0, 60, 75, 100],
+                              labels=['Faible (<60)', 'Moyen (60-75)', 'Bon (>75)'])
+
+# Visualisation
+fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+
+# Graphique 1 : Distribution continue (score)
+scatter1 = axes[0].scatter(X_pca[:, 0], X_pca[:, 1],
+                          c=df_encoded['Exam_Score'],
+                          cmap='RdYlGn',
+                          alpha=0.6,
+                          s=50,
+                          edgecolors='black',
+                          linewidths=0.5)
+cbar1 = plt.colorbar(scatter1, ax=axes[0])
+cbar1.set_label('Score d\'examen', fontsize=12)
+axes[0].set_xlabel(f'Composante 1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)', fontsize=12)
+axes[0].set_ylabel(f'Composante 2 ({pca.explained_variance_ratio_[1]*100:.1f}% variance)', fontsize=12)
+axes[0].set_title('Vision continue : gradient de performance', fontsize=13, fontweight='bold')
+axes[0].grid(True, alpha=0.3)
+
+# Graphique 2 : Catégories de performance
+colors_cat = {'Faible (<60)': '#d62728', 'Moyen (60-75)': '#ff7f0e', 'Bon (>75)': '#2ca02c'}
+for category, color in colors_cat.items():
+    mask = performance_category == category
+    axes[1].scatter(X_pca[mask, 0], X_pca[mask, 1],
+                   c=color, label=category,
+                   alpha=0.6, s=50, edgecolors='black', linewidths=0.5)
+
+axes[1].set_xlabel(f'Composante 1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)', fontsize=12)
+axes[1].set_ylabel(f'Composante 2 ({pca.explained_variance_ratio_[1]*100:.1f}% variance)', fontsize=12)
+axes[1].set_title('Vision catégorielle : 3 niveaux de performance', fontsize=13, fontweight='bold')
+axes[1].legend(loc='best', fontsize=11)
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# Analyse des résultats
+print(f"\n📊 RÉSULTATS DE L'ANALYSE :\n")
+print(f"{'─'*70}")
+print(f"Variance expliquée : {sum(pca.explained_variance_ratio_)*100:.1f}% (2D)")
+print(f"{'─'*70}\n")
+
+# Statistiques par catégorie
+print("Répartition des étudiants par niveau de performance :")
+print(performance_category.value_counts().sort_index())
+print(f"\n{'─'*70}\n")
+
+print("💡 INTERPRÉTATION :")
+print("   • Graphique de gauche : montre un CONTINUUM avec un gradient de couleur")
+print("     progressif (rouge→orange→vert), confirmant l'absence de groupes distincts")
+print("   • Graphique de droite : montre un CHEVAUCHEMENT TOTAL des 3 catégories,")
+print("     les couleurs sont complètement mélangées sans frontières claires")
+print("   • Les 3 'colonnes' verticales visibles proviennent de variables catégorielles")
+print("     encodées, pas de groupes naturels d'étudiants")
+print("   • La variance expliquée en 2D (~15-20%) est faible, indiquant que la structure")
+print("     des données est complexe et multidimensionnelle")
+print(f"\n   ➡️  Conclusion : Les données forment un SPECTRE continu de performances")
+print("      plutôt que des groupes naturellement distincts.")
+print(f"\n   ➡️  Implication : Tout clustering K-means sera une SEGMENTATION ARTIFICIELLE")
+print("      utile pour la description et la communication, mais ne reflète PAS")
+print("      des groupes 'réels' présents naturellement dans les données.\n")
+print(f"{'='*70}\n")
+
+features = [c for c in df_final.columns if c != target_col]
+X = df_final[features].copy()
+y = df_final[target_col].copy()
+
+print(f"Nombre de features : {len(features)}")
+print(f"Shape de X : {X.shape}")
+print(f"Shape de y : {y.shape}")
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+print(f"Train : {X_train.shape}, Test : {X_test.shape}")
+
+scale_cols = [c for c in X_train.columns if c in numeric_vars]
+
+scaler = StandardScaler()
+X_train_scaled = X_train.copy()
+X_test_scaled = X_test.copy()
+
+X_train_scaled[scale_cols] = scaler.fit_transform(X_train[scale_cols])
+X_test_scaled[scale_cols] = scaler.transform(X_test[scale_cols])
+
+print(f"Colonnes standardisées : {len(scale_cols)}")
+print(X_train_scaled.head())
+
+
+
+from sklearn.linear_model import Lasso, ElasticNet
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.model_selection import KFold
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+models = {
+ 'LinearRegression': LinearRegression(),
+ 'Ridge': Ridge(random_state=42),
+  'Elastic Net': ElasticNet(random_state=42),
+  'Lasso': Lasso(random_state=42),
+ 'RandomForest': RandomForestRegressor(n_estimators=300, random_state=42),
+ 'GradientBoosting': GradientBoostingRegressor(random_state=42)
+}
+
+cv = KFold(n_splits=5, shuffle=True, random_state=42)
+cv_rows = []
+for name, mdl in models.items():
+    mae_list=[]; rmse_list=[]; r2_list=[]
+    for tr_idx, val_idx in cv.split(X_train_scaled):
+        X_tr = X_train_scaled.iloc[tr_idx]
+        X_val = X_train_scaled.iloc[val_idx]
+        y_tr = y_train.iloc[tr_idx]
+        y_val = y_train.iloc[val_idx]
+        mdl.fit(X_tr, y_tr)
+        preds = mdl.predict(X_val)
+        mae = mean_absolute_error(y_val, preds)
+        rmse = mean_squared_error(y_val, preds)**0.5
+        r2 = r2_score(y_val, preds)
+        mae_list.append(mae); rmse_list.append(rmse); r2_list.append(r2)
+    cv_rows.append({'Model': name,
+                    'MAE_mean': np.mean(mae_list), 'MAE_std': np.std(mae_list),
+                    'RMSE_mean': np.mean(rmse_list), 'RMSE_std': np.std(rmse_list),
+                    'R2_mean': np.mean(r2_list), 'R2_std': np.std(r2_list)})
+cv_results = pd.DataFrame(cv_rows).sort_values(by=['RMSE_mean','R2_mean'], ascending=[True, False])
+cv_results
+
+best_model_name = cv_results.iloc[0]['Model']
+print('Meilleur modèle CV:', best_model_name)
+best_model = models[best_model_name]
+best_model.fit(X_train, y_train)
+
+# Réentraînement meilleur modèle sur train complet (scalé) et évaluation test (noms corrigés)
+best_model_name = cv_results.iloc[0]['Model']
+print('Meilleur modèle CV:', best_model_name)
+best_model = models[best_model_name]
+best_model.fit(X_train_scaled, y_train)
+# Train metrics
+train_preds = best_model.predict(X_train_scaled)
+mae_train = mean_absolute_error(y_train, train_preds)
+rmse_train = mean_squared_error(y_train, train_preds)**0.5
+r2_train = r2_score(y_train, train_preds)
+# Test metrics
+test_preds = best_model.predict(X_test_scaled)
+mae_test = mean_absolute_error(y_test, test_preds)
+rmse_test = mean_squared_error(y_test, test_preds)**0.5
+r2_test = r2_score(y_test, test_preds)
+print({'Train_MAE': mae_train, 'Train_RMSE': rmse_train, 'Train_R2': r2_train})
+print({'Test_MAE': mae_test, 'Test_RMSE': rmse_test, 'Test_R2': r2_test})
+
+# Grilles de paramètres optimisées
+import time
+from sklearn.model_selection import RandomizedSearchCV
+param_grids = {
+    'LinearRegression': {},
+
+    'Ridge': {
+        'alpha': [0.1, 1.0, 10.0, 50.0]
+    },
+
+    'Lasso': {
+        'alpha': [0.001, 0.01, 0.1, 1.0, 10.0],
+        'max_iter': [1000, 5000, 10000]
+    },
+
+    'ElasticNet': {
+        'alpha': [0.001, 0.01, 0.1, 1.0],
+        'l1_ratio': [0.2, 0.5, 0.8, 1.0],  # 1.0 => Lasso
+        'max_iter': [1000, 5000, 10000]
+    },
+
+    'RandomForest': {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [5, 10, 15],
+        'min_samples_split': [10, 20],
+        'min_samples_leaf': [5, 10]
+    },
+
+    'GradientBoosting': {
+        'n_estimators': [50, 100],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'max_depth': [3, 5],
+        'min_samples_split': [10, 20]
+    }
+}
+
+# Modèles de base
+base_models = {
+    'LinearRegression': LinearRegression(),
+    'Ridge': Ridge(random_state=42),
+    'Lasso': Lasso(random_state=42),
+    'ElasticNet': ElasticNet(random_state=42),
+    'RandomForest': RandomForestRegressor(random_state=42, n_jobs=-1),
+    'GradientBoosting': GradientBoostingRegressor(random_state=42)
+}
+
+# Tuning avec RandomizedSearchCV
+best_models = {}
+tuning_results = []
+
+print("🔧 HYPERPARAMETER TUNING EN COURS...\n")
+
+for name, model in base_models.items():
+    print(f"   {name}...", end=" ")
+    start_time = time.time()
+
+    if param_grids[name]:
+        search = RandomizedSearchCV(
+            model,
+            param_grids[name],
+            n_iter=8,
+            cv=3,
+            scoring='r2',
+            n_jobs=-1,
+            random_state=42,
+            verbose=0
+        )
+        search.fit(X_train_scaled, y_train)
+
+        best_models[name] = search.best_estimator_
+        best_params = search.best_params_
+        cv_score = search.best_score_
+
+    else:  # LinearRegression
+        model.fit(X_train_scaled, y_train)
+        best_models[name] = model
+        best_params = "Pas d'hyperparamètres"
+
+        cv = KFold(n_splits=3, shuffle=True, random_state=42)
+        scores = []
+        for tr_idx, val_idx in cv.split(X_train_scaled):
+            model.fit(X_train_scaled.iloc[tr_idx], y_train.iloc[tr_idx])
+            preds = model.predict(X_train_scaled.iloc[val_idx])
+            scores.append(r2_score(y_train.iloc[val_idx], preds))
+        cv_score = np.mean(scores)
+
+    elapsed = time.time() - start_time
+
+    tuning_results.append({
+        'Model': name,
+        'Best_Params': str(best_params),
+        'CV_Score': cv_score,
+        'Time': f"{elapsed:.2f}s"
+    })
+
+    print(f"✅ R² CV: {cv_score:.4f}")
+
+print("\n✅ Tuning terminé !")
+
+df_tuning = pd.DataFrame(tuning_results).sort_values('CV_Score', ascending=False)
+display(df_tuning)
+
+
+# Évaluation finale Train vs Test
+final_results = []
+
+for name, model in best_models.items():
+    model.fit(X_train_scaled, y_train)
+
+    train_preds = model.predict(X_train_scaled)
+    test_preds = model.predict(X_test_scaled)
+
+    final_results.append({
+        'Model': name,
+        'R2_Train': r2_score(y_train, train_preds),
+        'R2_Test': r2_score(y_test, test_preds),
+        'R2_Gap': r2_score(y_train, train_preds) - r2_score(y_test, test_preds),
+        'RMSE_Train': mean_squared_error(y_train, train_preds)**0.5,
+        'RMSE_Test': mean_squared_error(y_test, test_preds)**0.5,
+        'MAE_Test': mean_absolute_error(y_test, test_preds)
+    })
+
+df_final = pd.DataFrame(final_results).sort_values('R2_Test', ascending=False)
+df_final = df_final.merge(df_tuning[['Model', 'CV_Score']].rename(columns={'CV_Score': 'R2_CV'}), on='Model', how='left')
+df_final = df_final[['Model', 'R2_Train', 'R2_CV', 'R2_Test', 'R2_Gap', 'RMSE_Train', 'RMSE_Test', 'MAE_Test']]
+
+print("📊 ÉVALUATION TRAIN vs TEST :\n")
+display(df_final.round(4))
+
+# Diagnostic overfitting par modèle
+print("🔍 DIAGNOSTIC OVERFITTING :\n")
+
+for _, row in df_final.iterrows():
+    gap = row['R2_Gap']
+
+    if gap < 0:
+        status = "⚠️ ANORMAL"
+        desc = "Test > Train (situation suspecte)"
+    elif gap < 0.05:
+        status = "✅ EXCELLENT"
+        desc = "Pas d'overfitting"
+    elif gap < 0.10:
+        status = "✅ BON"
+        desc = "Overfitting minimal"
+    elif gap < 0.15:
+        status = "⚠️ MODÉRÉ"
+        desc = "Overfitting notable"
+    else:
+        status = "❌ FORT"
+        desc = "Overfitting important"
+
+    print(f"{row['Model']:20} {status:15} | Écart: {gap:+.4f} - {desc}")
+
+
+print("📋 SITUATION ACTUELLE :\n")
+print("   • R² Test > R² Train pour : LinearRegression, Ridge, LASSO")
+print("   • Cause probable : Test set trop petit ou distribution favorable")
+print("   • GradientBoosting : Comportement normal (écart +0.025)")
+
+# Coefficients Ridge
+from sklearn.linear_model import Ridge
+
+ridge = Ridge(alpha=1.0, random_state=42)
+ridge.fit(X_train_scaled, y_train)
+
+coef_df = pd.DataFrame({
+    'Variable': X_train_scaled.columns,
+    'Coefficient': ridge.coef_,
+    'Abs_Coef': np.abs(ridge.coef_)
+}).sort_values('Abs_Coef', ascending=False)
+
+print("📌 COEFFICIENTS RIDGE (Top 8) :\n")
+display(coef_df.head(8)[['Variable', 'Coefficient']])
+
+# Visualisation Ridge : Prédictions vs Réalité
+ridge = Ridge(alpha=1.0, random_state=42)
+ridge.fit(X_train_scaled, y_train)
+
+train_preds_ridge = ridge.predict(X_train_scaled)
+test_preds_ridge = ridge.predict(X_test_scaled)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Train
+axes[0].scatter(y_train, train_preds_ridge, alpha=0.6, s=30)
+axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--', lw=2)
+axes[0].set_xlabel('Vraies valeurs')
+axes[0].set_ylabel('Prédictions')
+axes[0].set_title(f'Ridge - TRAIN (R² = {r2_score(y_train, train_preds_ridge):.4f})')
+axes[0].grid(True, alpha=0.3)
+
+# Test
+axes[1].scatter(y_test, test_preds_ridge, alpha=0.6, s=30, color='orange')
+axes[1].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
+axes[1].set_xlabel('Vraies valeurs')
+axes[1].set_ylabel('Prédictions')
+axes[1].set_title(f'Ridge - TEST (R² = {r2_score(y_test, test_preds_ridge):.4f})')
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# Métriques Ridge
+print("📊 RÉSULTATS RIDGE :")
+print(f"   MAE Test : {mean_absolute_error(y_test, test_preds_ridge):.2f} points")
+print(f"   RMSE Test : {mean_squared_error(y_test, test_preds_ridge)**0.5:.2f} points")
+print(f"   R² Test : {r2_score(y_test, test_preds_ridge):.4f}")
+
+# Teste Gradient Boosting avec toutes les 20 features
+gb_all = GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=5, min_samples_split=10, random_state=42)
+gb_all.fit(X_train_scaled, y_train)
+
+train_preds_gb = gb_all.predict(X_train_scaled)
+test_preds_gb = gb_all.predict(X_test_scaled)
+
+# Métriques Gradient Boosting avec 20 features
+r2_train_gb = r2_score(y_train, train_preds_gb)
+r2_test_gb = r2_score(y_test, test_preds_gb)
+rmse_test_gb = mean_squared_error(y_test, test_preds_gb)**0.5
+mae_test_gb = mean_absolute_error(y_test, test_preds_gb)
+
+print("📊 GRADIENT BOOSTING (20 features) :")
+print(f"   R² Train : {r2_train_gb:.4f}")
+print(f"   R² Test : {r2_test_gb:.4f}")
+print(f"   Gap : {r2_train_gb - r2_test_gb:+.4f}")
+print(f"   MAE Test : {mae_test_gb:.2f} points")
+print(f"   RMSE Test : {rmse_test_gb:.2f} points")
+
+# Feature Importance - Gradient Boosting
+gb = GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=5, min_samples_split=10, random_state=42)
+gb.fit(X_train_scaled, y_train)
+
+importance_df = pd.DataFrame({
+    'Variable': X_train_scaled.columns,
+    'Importance': gb.feature_importances_
+}).sort_values('Importance', ascending=False)
+
+print("⭐ FEATURE IMPORTANCE - GRADIENT BOOSTING (Top 8) :\n")
+display(importance_df.head(8)[['Variable', 'Importance']])
+
+# Visualisation
+plt.figure(figsize=(10, 6))
+top_15 = importance_df.head(15)
+plt.barh(range(len(top_15)), top_15['Importance'], color='steelblue')
+plt.yticks(range(len(top_15)), top_15['Variable'])
+plt.xlabel('Importance')
+plt.title('Top 15 Features - Gradient Boosting')
+plt.gca().invert_yaxis()
+plt.tight_layout()
+plt.show()
+
+print("✅ Top 15 features visualisées")
+
+# Comparaison : Gradient Boosting avec 10, 15 vs 20 features
+print("🔍 COMPARAISON : Impact du nombre de features")
+print("="*60)
+
+# Récupérer les listes de features
+top_10_features = importance_df.head(10)['Variable'].tolist()
+top_15_features = importance_df.head(15)['Variable'].tolist()
+all_20_features = X_train_scaled.columns.tolist()
+
+results_comparison = []
+
+for nb_features, features in [(10, top_10_features), (15, top_15_features), (20, all_20_features)]:
+    X_train_selected = X_train_scaled[features]
+    X_test_selected = X_test_scaled[features]
+
+    gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=5, min_samples_split=10, random_state=42)
+    gb_model.fit(X_train_selected, y_train)
+
+    train_preds = gb_model.predict(X_train_selected)
+    test_preds = gb_model.predict(X_test_selected)
+
+    r2_train = r2_score(y_train, train_preds)
+    r2_test = r2_score(y_test, test_preds)
+    rmse_test = mean_squared_error(y_test, test_preds)**0.5
+    mae_test = mean_absolute_error(y_test, test_preds)
+
+    results_comparison.append({
+        'Features': nb_features,
+        'R²_Train': r2_train,
+        'R²_Test': r2_test,
+        'Gap': r2_train - r2_test,
+        'MAE_Test': mae_test,
+        'RMSE_Test': rmse_test
+    })
+
+
+comparison_df = pd.DataFrame(results_comparison)
+print("\n📊 TABLEAU COMPARATIF :")
+display(comparison_df.round(4))
+
+# Meilleur score
+best_idx = comparison_df['R²_Test'].idxmax()
+best_row = comparison_df.iloc[best_idx]
+print(f"\n✅ Meilleur R² Test : {int(best_row['Features'])} features ({best_row['R²_Test']:.4f})")
