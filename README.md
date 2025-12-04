@@ -1,11 +1,11 @@
-# 🎓 Student Performance Prediction
+# Student Performance Prediction
 
 Ce projet analyse et prédit les performances académiques d’élèves à partir de facteurs **démographiques**, **comportementaux** et **socio-économiques**.  
 L’objectif est d’identifier les variables les plus influentes sur le **`Exam_Score`** et de tester plusieurs modèles de machine learning.
 
 ---
 
-## 📘 Dataset Overview
+## Dataset Overview
 
 - **Nom :** Student Performance Factors  
 - **Taille :** 6 607 élèves  
@@ -13,9 +13,9 @@ L’objectif est d’identifier les variables les plus influentes sur le **`Exam
 
 ---
 
-## 📊 Variables du Dataset
+## Variables du Dataset
 
-### 🔹 Features (extraits)
+### Features (extraits)
 
 | Variable | Description |
 |---------|-------------|
@@ -37,8 +37,9 @@ L’objectif est d’identifier les variables les plus influentes sur le **`Exam
 
 ---
 
-### 🎯 Target Variable
+### Target Variable
 
 | Variable | Description |
 |---------|-------------|
 | **Exam_Score** | Score final de l’élève (0–100) |
+
